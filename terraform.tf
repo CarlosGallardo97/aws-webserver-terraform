@@ -4,6 +4,15 @@ provider "aws" {
 
 locals {
   name   = "example-asg"
+
+  user_data = <<-EOT
+  #!/bin/bash
+  sudo su
+  apt-get update
+  apt-get install apache2 -y
+  systemctl start apache2
+  systemctl enable apache2
+  EOT
 }
 
 ################################################################################
@@ -240,6 +249,7 @@ module "lt_webserver" {
 
   image_id      = data.aws_ami.ubuntu_server.id
   instance_type = "t2.micro"
+  user_data_base64  = base64encode(local.user_data)
 
   security_groups = [module.frontend_asg_sg.security_group_id]
 
@@ -287,3 +297,98 @@ module "lt_databases" {
   enable_log_to_cloudwatch  = true
   vpc_endpoints_enabled     = true
 }  */
+
+
+resource "aws_sns_topic" "rd_topic" {
+  name = "rd_topic"
+}
+
+resource "aws_sns_topic_subscription" "rd_topic_sns_target" {
+  topic_arn = aws_sns_topic.rd_topic.arn
+  protocol  = "email"
+  endpoint  = "carlos_xavier97@hotmail.com"
+}
+
+resource "aws_autoscaling_policy" "scale-in" {
+  name                   = "scale-in-policy"
+  scaling_adjustment     = -1
+  adjustment_type        = "ChangeInCapacity"
+  cooldown               = 30
+  autoscaling_group_name = module.lt_webserver.autoscaling_group_name
+}
+
+resource "aws_autoscaling_policy" "scale-out" {
+  name                   = "scale-out-policy"
+  scaling_adjustment     = 1
+  adjustment_type        = "ChangeInCapacity"
+  cooldown               = 30
+  autoscaling_group_name = module.lt_webserver.autoscaling_group_name
+}
+
+resource "aws_cloudwatch_metric_alarm" "scale-out-alarm" {
+  alarm_name          = "rd-scale-out"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = "1"
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/EC2"
+  period              = "60"
+  statistic           = "Average"
+  threshold           = "70"
+
+  dimensions = {
+    AutoScalingGroupName = module.lt_webserver.autoscaling_group_name
+  }
+
+  alarm_description = "This metric monitors asg cpu utilization"
+  alarm_actions     = [aws_sns_topic.rd_topic.arn, aws_autoscaling_policy.scale-out.arn]
+}
+
+resource "aws_cloudwatch_metric_alarm" "scale-in-alarm" {
+  alarm_name          = "rd-scale-in"
+  comparison_operator = "LessThanOrEqualToThreshold"
+  evaluation_periods  = "1"
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/EC2"
+  period              = "60"
+  statistic           = "Average"
+  threshold           = "30"
+
+  dimensions = {
+    AutoScalingGroupName = module.lt_webserver.autoscaling_group_name
+  }
+
+  alarm_description = "This metric monitors asg cpu utilization"
+  alarm_actions     = [aws_sns_topic.rd_topic.arn, aws_autoscaling_policy.scale-in.arn]
+}
+
+/* module "metric_alarm_scale_out" {
+  source  = "terraform-aws-modules/cloudwatch/aws//modules/metric-alarm"
+  version = "~> 2.0"
+  alarm_name          = "rd-scale-out"
+  alarm_description   = "Autoscaling alarm when Scaling-Out"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = 1
+  threshold           = 70
+  period              = 60
+  unit                = "Count"
+  namespace   = "AWS/EC2"
+  metric_name = "CPUUtilization"
+  statistic   = "Average"
+  alarm_actions = [aws_sns_topic.rd_topic.arn, aws_autoscaling_policy.scale-out.arn]
+}
+
+module "metric_alarm_scale_in" {
+  source  = "terraform-aws-modules/cloudwatch/aws//modules/metric-alarm"
+  version = "~> 2.0"
+  alarm_name          = "rd-scale-in"
+  alarm_description   = "Autoscaling alarm when Scaling-In"
+  comparison_operator = "LessThanOrEqualToThreshold"
+  evaluation_periods  = 1
+  threshold           = 30
+  period              = 60
+  unit                = "Count"
+  namespace   = "MyApplication"
+  metric_name = "CPU Minimum"
+  statistic   = "Minimum"
+  alarm_actions = [aws_sns_topic.rd_topic.arn, aws_autoscaling_policy.scale-in.arn]
+} */
