@@ -2,6 +2,8 @@ region = "us-east-2"
 
 vpc_name = "rd-vpc"
 
+name= "rdmx"
+
 vpc_cidr_block = "192.168.0.0/16"
 
 availability_zone_names = [
@@ -24,4 +26,6 @@ database_subnets = [
   "192.168.40.0/24"
 ]
 
-aws_ami = "ubuntu/images/ubuntu-*-*-amd64-server-*"
+aws_ami = "ami-06ee4b048e6f55b81"
+
+instance_type = "t2.micro"
